@@ -86,7 +86,140 @@ export interface LoginCredentials {
 }
 
 export interface AuthResponse {
-  access_token: string;
-  refresh_token: string;
-  user: User;
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  tokenType: string;
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    roleId: string | null;
+  };
+}
+
+export interface RedisMetrics {
+  status: 'up' | 'down';
+  connectedClients: number;
+  usedMemory: string;
+  usedMemoryPeak: string;
+  totalCommandsProcessed: number;
+  instantaneousOpsPerSec: number;
+  keyspaceHits: number;
+  keyspaceMisses: number;
+  evictedKeys: number;
+  responseTime: number;
+}
+
+export interface WhatsAppStatus {
+  status: 'up' | 'down';
+  accountSid?: string;
+  phoneNumber?: string;
+  messagesLast24h?: number;
+  responseTime?: number;
+  lastMessageSent?: Date;
+  error?: string;
+}
+
+export interface ApiMetrics {
+  totalRequests: number;
+  averageResponseTime: number;
+  errorRate: number;
+  requestsPerMinute: number;
+  endpoints: {
+    path: string;
+    method: string;
+    count: number;
+    averageTime: number;
+  }[];
+}
+
+export interface ProfileResponse {
+  id: string;
+  email: string;
+  name: string;
+  phone?: string;
+  profilePicture?: string;
+  userType: UserType;
+  language?: string;
+  emailVerified: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  onboardingCompleted?: boolean;
+  onboardingCompletedAt?: Date;
+}
+
+export interface Branch {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  governorateId: number;
+  governorateName?: string;
+  cityId: number;
+  cityName?: string;
+  pharmacyId: string;
+  pharmacy?: {
+    id: string;
+    name: string;
+  };
+  tenant?: {
+    id: string;
+    name: string;
+    code: string;
+  };
+  tenantId?: string;
+  status?: 'ACTIVE' | 'INACTIVE';
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Pharmacy {
+  id: string;
+  tenantId: string;
+  name: string;
+  code: string;
+  phone: string;
+  licenseNumber: string;
+  taxNumber?: string;
+  address: string;
+  governorateId: number;
+  governorateName?: string;
+  cityId: number;
+  cityName?: string;
+  logoUrl?: string;
+  brandColor: string;
+  adminUserId?: string;
+  operatingHours?: Record<string, {
+    open: string;
+    close: string;
+    isClosed: boolean;
+  }>;
+  settings?: {
+    deliveryFee?: number;
+    defaultMarkup?: number;
+    enableDelivery?: boolean;
+    enableWhatsApp?: boolean;
+    allowOnlineOrders?: boolean;
+    maxDeliveryRadius?: number;
+    autoOrderThreshold?: number;
+    requirePrescription?: boolean;
+    freeDeliveryThreshold?: number;
+  };
+  paymentMethods?: {
+    card?: boolean;
+    cash?: boolean;
+    wallet?: boolean;
+    insurance?: boolean;
+    installments?: boolean;
+  };
+  isActive: boolean;
+  tenant?: {
+    id: string;
+    name: string;
+    code: string;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt?: Date;
 }

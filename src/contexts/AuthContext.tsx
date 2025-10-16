@@ -3,10 +3,17 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
-import { User, AuthResponse, LoginCredentials } from '@/types/admin.types';
+import { AuthResponse, LoginCredentials, ProfileResponse } from '@/types/admin.types';
+
+interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  roleId?: string | null;
+}
 
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null;
   loading: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
   logout: () => void;
@@ -16,12 +23,12 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
-    // Check for existing token on mount
+    // Check for existing token on mount and validate it
     const token = localStorage.getItem('admin_access_token');
     if (token) {
       // Validate token by fetching user profile
@@ -33,10 +40,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchUserProfile = async () => {
     try {
-      const response = await api.get('/api/v1/auth/profile');
-      setUser(response.data);
+      const response = await api.get<ProfileResponse>('/api/v1/profile');
+      // Response is already unwrapped by the interceptor
+      const profileData = response.data;
+
+      // Map profile response to AuthUser
+      const authUser: AuthUser = {
+        id: profileData.id,
+        email: profileData.email,
+        name: profileData.name,
+      };
+
+      setUser(authUser);
     } catch (error) {
-      // Token is invalid, clear it
+      // Token is invalid or expired, clear it
       localStorage.removeItem('admin_access_token');
       localStorage.removeItem('admin_refresh_token');
     } finally {
@@ -46,14 +63,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (credentials: LoginCredentials) => {
     try {
-      const response = await api.post<AuthResponse>('/api/v1/auth/login', credentials);
-      const { access_token, refresh_token, user } = response.data;
+      const response = await api.post<AuthResponse>('/api/v1/auth/system/login', credentials);
+      // Response is already unwrapped by the interceptor
+      const { accessToken, refreshToken } = response.data;
 
-      localStorage.setItem('admin_access_token', access_token);
-      localStorage.setItem('admin_refresh_token', refresh_token);
+      // Store tokens in localStorage
+      localStorage.setItem('admin_access_token', accessToken);
+      localStorage.setItem('admin_refresh_token', refreshToken);
 
-      setUser(user);
-      router.push('/');
+      // Fetch user profile to set user state
+      await fetchUserProfile();
+
+      // Use window.location for a hard redirect to ensure clean state
+      window.location.href = '/';
     } catch (error) {
       const message = error instanceof Error && 'response' in error
         ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
