@@ -76,8 +76,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Fetch user profile to set user state
       await fetchUserProfile();
 
-      // Use window.location for a hard redirect to ensure clean state
-      window.location.href = '/';
+      // Use window.location for static export compatibility with basePath
+      // router.push() doesn't respect basePath in static exports
+      if (typeof window !== 'undefined') {
+        window.location.href = '/pharmacy-admin-dashboard/';
+      }
     } catch (error) {
       const message = error instanceof Error && 'response' in error
         ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
@@ -90,7 +93,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('admin_access_token');
     localStorage.removeItem('admin_refresh_token');
     setUser(null);
-    router.push('/login');
+    // Use window.location for static export compatibility with basePath
+    if (typeof window !== 'undefined') {
+      window.location.href = '/pharmacy-admin-dashboard/login';
+    }
   };
 
   return (

@@ -1,5 +1,17 @@
 import axios from 'axios';
 
+// Helper to get the base path for redirects (GitHub Pages support)
+const getBasePath = () => {
+  if (typeof window !== 'undefined') {
+    const pathSegments = window.location.pathname.split('/').filter(Boolean);
+    // Check if first segment is 'pharmacy-admin-dashboard' (GitHub Pages)
+    if (pathSegments[0] === 'pharmacy-admin-dashboard') {
+      return '/pharmacy-admin-dashboard';
+    }
+  }
+  return '';
+};
+
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000',
   headers: {
@@ -74,10 +86,11 @@ api.interceptors.response.use(
 
       if (!refreshToken) {
         // No refresh token, redirect to login
-        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        const basePath = getBasePath();
+        if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/login')) {
           localStorage.removeItem('admin_access_token');
           localStorage.removeItem('admin_refresh_token');
-          window.location.href = '/login';
+          window.location.href = `${basePath}/login`;
         }
         return Promise.reject(error);
       }
@@ -111,10 +124,11 @@ api.interceptors.response.use(
         processQueue(refreshError, null);
 
         // Refresh failed, clear tokens and redirect to login
-        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        const basePath = getBasePath();
+        if (typeof window !== 'undefined' && !window.location.pathname.endsWith('/login')) {
           localStorage.removeItem('admin_access_token');
           localStorage.removeItem('admin_refresh_token');
-          window.location.href = '/login';
+          window.location.href = `${basePath}/login`;
         }
 
         return Promise.reject(refreshError);
