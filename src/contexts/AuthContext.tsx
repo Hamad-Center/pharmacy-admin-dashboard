@@ -10,6 +10,7 @@ interface AuthUser {
   email: string;
   name: string;
   roleId?: string | null;
+  userType?: string;
 }
 
 interface AuthContextType {
@@ -40,15 +41,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchUserProfile = async () => {
     try {
-      const response = await api.get<ProfileResponse>('/api/v1/profile');
-      // Response is already unwrapped by the interceptor
-      const profileData = response.data;
+      const response = await api.get<{ data: ProfileResponse }>('/api/v1/profile');
+      // Response has nested data: response.data.data
+      const profileData = response.data.data;
 
       // Map profile response to AuthUser
       const authUser: AuthUser = {
         id: profileData.id,
         email: profileData.email,
         name: profileData.name,
+        userType: profileData.userType,
       };
 
       setUser(authUser);

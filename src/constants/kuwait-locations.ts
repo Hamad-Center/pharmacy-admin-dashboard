@@ -130,6 +130,10 @@ export const getGovernorateById = (id: number) => {
   return KUWAIT_GOVERNORATES.find(gov => gov.id === id);
 };
 
+export const getCitiesByGovernorate = (governorateId: number) => {
+  return KUWAIT_CITIES_BY_GOVERNORATE[governorateId] || [];
+};
+
 export const getCityById = (governorateId: number, cityId: number) => {
   const cities = KUWAIT_CITIES_BY_GOVERNORATE[governorateId] || [];
   return cities.find(city => city.id === cityId);

@@ -20,8 +20,7 @@ export default function SettingsPage() {
 
   // Account settings state
   const [accountData, setAccountData] = useState({
-    firstName: '',
-    lastName: '',
+    name: '',
     email: '',
     phone: '',
   });
@@ -45,8 +44,8 @@ export default function SettingsPage() {
   const { data: profileData, isLoading: isLoadingProfile } = useQuery({
     queryKey: ['user-profile'],
     queryFn: async () => {
-      const response = await api.get('/api/v1/auth/profile');
-      return response.data;
+      const response = await api.get('/api/v1/profile');
+      return response.data.data; // user-management returns { data: { ... } }
     },
   });
 
@@ -54,8 +53,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (profileData) {
       setAccountData({
-        firstName: profileData.firstName || '',
-        lastName: profileData.lastName || '',
+        name: profileData.name || '',
         email: profileData.email || '',
         phone: profileData.phone || '',
       });
@@ -69,7 +67,7 @@ export default function SettingsPage() {
   // Update profile mutation
   const updateProfileMutation = useMutation({
     mutationFn: async (data: Partial<typeof accountData>) => {
-      const response = await api.patch('/api/v1/auth/profile', data);
+      const response = await api.patch('/api/v1/profile', data);
       return response.data;
     },
     onSuccess: () => {
@@ -83,7 +81,7 @@ export default function SettingsPage() {
 
   // Change password mutation
   const changePasswordMutation = useMutation({
-    mutationFn: async (data: { currentPassword: string; newPassword: string }) => {
+    mutationFn: async (data: { currentPassword: string; newPassword: string; confirmPassword: string }) => {
       const response = await api.post('/api/v1/auth/change-password', data);
       return response.data;
     },
@@ -134,6 +132,7 @@ export default function SettingsPage() {
     changePasswordMutation.mutate({
       currentPassword: securityData.currentPassword,
       newPassword: securityData.newPassword,
+      confirmPassword: securityData.confirmPassword,
     });
   };
 
@@ -191,27 +190,15 @@ export default function SettingsPage() {
           <CardDescription>Update your personal information</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 pt-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="firstName">First Name</Label>
-              <Input
-                id="firstName"
-                value={accountData.firstName}
-                onChange={(e) => setAccountData({ ...accountData, firstName: e.target.value })}
-                placeholder="John"
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label htmlFor="lastName">Last Name</Label>
-              <Input
-                id="lastName"
-                value={accountData.lastName}
-                onChange={(e) => setAccountData({ ...accountData, lastName: e.target.value })}
-                placeholder="Doe"
-                className="mt-1"
-              />
-            </div>
+          <div>
+            <Label htmlFor="name">Full Name</Label>
+            <Input
+              id="name"
+              value={accountData.name}
+              onChange={(e) => setAccountData({ ...accountData, name: e.target.value })}
+              placeholder="John Doe"
+              className="mt-1"
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

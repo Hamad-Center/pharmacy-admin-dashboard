@@ -195,24 +195,33 @@ export default function MonitoringPage() {
       </Card>
 
       {dbMetrics?.connections && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Database Connections</CardTitle>
+        <Card className="border-0 shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-slate-50 to-gray-50 border-b">
+            <CardTitle className="flex items-center gap-2">
+              <Database className="h-5 w-5 text-blue-600" />
+              Database Connections
+            </CardTitle>
             <CardDescription>Connection pool statistics</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             <div className="grid grid-cols-3 gap-4">
-              <div>
-                <p className="text-sm text-gray-500">Total</p>
-                <p className="text-2xl font-bold">{dbMetrics.connections.total}</p>
+              <div className="p-4 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg border border-blue-200">
+                <p className="text-sm text-gray-600 font-medium">Total</p>
+                <p className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent mt-1">
+                  {dbMetrics.connections.total}
+                </p>
               </div>
-              <div>
-                <p className="text-sm text-gray-500">Active</p>
-                <p className="text-2xl font-bold">{dbMetrics.connections.active}</p>
+              <div className="p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200">
+                <p className="text-sm text-gray-600 font-medium">Active</p>
+                <p className="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent mt-1">
+                  {dbMetrics.connections.active}
+                </p>
               </div>
-              <div>
-                <p className="text-sm text-gray-500">Idle</p>
-                <p className="text-2xl font-bold">{dbMetrics.connections.idle}</p>
+              <div className="p-4 bg-gradient-to-br from-gray-50 to-slate-50 rounded-lg border border-gray-200">
+                <p className="text-sm text-gray-600 font-medium">Idle</p>
+                <p className="text-3xl font-bold bg-gradient-to-r from-gray-600 to-slate-600 bg-clip-text text-transparent mt-1">
+                  {dbMetrics.connections.idle}
+                </p>
               </div>
             </div>
           </CardContent>

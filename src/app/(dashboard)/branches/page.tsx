@@ -31,20 +31,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
 import { Branch } from '@/types/admin.types';
-import { Plus, Search, MoreVertical, Edit, Trash, MapPin, Phone, Map } from 'lucide-react';
+import { Plus, Search, Edit, Trash, MapPin, Phone, Map, Building2, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
-import { KUWAIT_GOVERNORATES, KUWAIT_CITIES_BY_GOVERNORATE, getGovernorateById, getCityById } from '@/constants/kuwait-locations';
 
 export default function BranchesPage() {
   const [selectedTenantId, setSelectedTenantId] = useState<string>('');
@@ -83,6 +74,11 @@ export default function BranchesPage() {
     governorateId: '',
     cityId: '',
   });
+
+  // Reset pharmacy selection when tenant changes
+  useEffect(() => {
+    setSelectedPharmacyId('');
+  }, [selectedTenantId]);
 
   // Reset form when create dialog opens
   useEffect(() => {
@@ -207,13 +203,53 @@ export default function BranchesPage() {
     },
   });
 
+  // Fetch pharmacies for selected tenant
+  const { data: pharmaciesData } = useQuery({
+    queryKey: ['pharmacies-for-tenant', selectedTenantId],
+    queryFn: async () => {
+      if (!selectedTenantId) return { success: true, data: [] };
+      const response = await api.get('/api/v1/admin/pharmacies', {
+        params: { tenantId: selectedTenantId }
+      });
+      return response.data;
+    },
+    enabled: !!selectedTenantId,
+  });
+
+  // Fetch governorates from API
+  const { data: governoratesData } = useQuery({
+    queryKey: ['governorates'],
+    queryFn: async () => {
+      const response = await api.get('/api/v1/lookups/governorates');
+      return response.data;
+    },
+  });
+
+  // Fetch cities for selected governorate
+  const { data: citiesData } = useQuery({
+    queryKey: ['cities', formData.governorateId],
+    queryFn: async () => {
+      if (!formData.governorateId) return { success: true, data: [] };
+      const response = await api.get('/api/v1/lookups/cities', {
+        params: { governorateId: formData.governorateId }
+      });
+      return response.data;
+    },
+    enabled: !!formData.governorateId,
+  });
+
   // Fetch branches when pharmacy is selected
   const { data: branchesData, isLoading } = useQuery({
-    queryKey: ['branches', selectedPharmacyId, debouncedSearch],
+    queryKey: ['admin-branches', selectedPharmacyId, debouncedSearch],
     queryFn: async () => {
       if (!selectedPharmacyId) return { success: true, data: [] };
 
-      const response = await api.get(`/api/v1/pharmacies/${selectedPharmacyId}/branches`);
+      const response = await api.get('/api/v1/admin/branches', {
+        params: {
+          pharmacyId: selectedPharmacyId,
+          search: debouncedSearch || undefined
+        }
+      });
       return response.data;
     },
     enabled: !!selectedPharmacyId,
@@ -223,11 +259,17 @@ export default function BranchesPage() {
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       if (!selectedPharmacyId) throw new Error('No pharmacy selected');
-      const response = await api.post(`/api/v1/pharmacies/${selectedPharmacyId}/branches`, data);
+      if (!selectedTenantId) throw new Error('No tenant selected');
+
+      const response = await api.post('/api/v1/admin/branches', {
+        ...data,
+        tenantId: selectedTenantId,
+        pharmacyId: selectedPharmacyId,
+      });
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['branches'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-branches'] });
       setCreateDialogOpen(false);
       setFormData({
         name: '',
@@ -246,12 +288,11 @@ export default function BranchesPage() {
   // Update branch mutation
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<typeof formData> }) => {
-      if (!selectedPharmacyId) throw new Error('No pharmacy selected');
-      const response = await api.patch(`/api/v1/pharmacies/${selectedPharmacyId}/branches/${id}`, data);
+      const response = await api.put(`/api/v1/admin/branches/${id}`, data);
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['branches'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-branches'] });
       setEditDialogOpen(false);
       setSelectedBranch(null);
       toast.success('Branch updated successfully');
@@ -264,12 +305,11 @@ export default function BranchesPage() {
   // Delete branch mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      if (!selectedPharmacyId) throw new Error('No pharmacy selected');
-      const response = await api.delete(`/api/v1/pharmacies/${selectedPharmacyId}/branches/${id}`);
+      const response = await api.delete(`/api/v1/admin/branches/${id}`);
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['branches'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-branches'] });
       toast.success('Branch deleted successfully');
     },
     onError: (error: any) => {
@@ -322,18 +362,12 @@ export default function BranchesPage() {
     setEditDialogOpen(true);
   };
 
-  // Filter branches by search
-  const filteredBranches = branchesData?.data?.filter((branch: Branch) => {
-    if (!debouncedSearch) return true;
-    const searchLower = debouncedSearch.toLowerCase();
-    return (
-      branch.name.toLowerCase().includes(searchLower) ||
-      branch.phone.toLowerCase().includes(searchLower) ||
-      branch.address.toLowerCase().includes(searchLower)
-    );
-  }) || [];
-
+  const branches = branchesData?.data || [];
   const hasSelection = selectedPharmacyId && selectedTenantId;
+
+  // Get selected tenant and pharmacy info for context display
+  const selectedTenant = tenantsData?.data?.find((t: any) => t.id === selectedTenantId);
+  const selectedPharmacy = pharmaciesData?.data?.find((p: any) => p.id === selectedPharmacyId);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -409,9 +443,9 @@ export default function BranchesPage() {
                       <SelectValue placeholder="Select governorate" />
                     </SelectTrigger>
                     <SelectContent>
-                      {KUWAIT_GOVERNORATES.map((gov) => (
+                      {governoratesData?.map((gov: any) => (
                         <SelectItem key={gov.id} value={gov.id.toString()}>
-                          {gov.name}
+                          {gov.stateEN}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -432,9 +466,9 @@ export default function BranchesPage() {
                       <SelectValue placeholder="Select city" />
                     </SelectTrigger>
                     <SelectContent>
-                      {(KUWAIT_CITIES_BY_GOVERNORATE[formData.governorateId] || []).map((city) => (
+                      {citiesData?.map((city: any) => (
                         <SelectItem key={city.id} value={city.id.toString()}>
-                          {city.name}
+                          {city.cityEN}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -473,21 +507,58 @@ export default function BranchesPage() {
         )}
       </div>
 
+      {/* Context Display Card */}
+      {hasSelection && (
+        <div className="bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-200 rounded-lg p-4">
+          <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-teal-600" />
+              <span className="font-medium text-gray-700">Tenant:</span>
+              <span className="text-gray-900 font-semibold">{selectedTenant?.name}</span>
+              <Badge variant="outline" className="ml-1">{selectedTenant?.code}</Badge>
+            </div>
+            <div className="h-4 w-px bg-teal-300" />
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-teal-600" />
+              <span className="font-medium text-gray-700">Pharmacy:</span>
+              <span className="text-gray-900 font-semibold">{selectedPharmacy?.name}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tenant and Pharmacy Selection */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div>
           <Label htmlFor="tenant" className="text-sm font-medium mb-2 block">Select Tenant *</Label>
-          <Select value={selectedTenantId} onValueChange={(value) => {
-            setSelectedTenantId(value);
-            setSelectedPharmacyId(value); // For now, pharmacy ID is the same as tenant ID
-          }}>
+          <Select value={selectedTenantId} onValueChange={setSelectedTenantId}>
             <SelectTrigger className="bg-white border-gray-200 shadow-sm">
-              <SelectValue placeholder="Choose a tenant to manage branches" />
+              <SelectValue placeholder="Choose a tenant" />
             </SelectTrigger>
             <SelectContent>
               {tenantsData?.data?.map((tenant: any) => (
                 <SelectItem key={tenant.id} value={tenant.id}>
                   {tenant.name} ({tenant.code})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <Label htmlFor="pharmacy" className="text-sm font-medium mb-2 block">Select Pharmacy *</Label>
+          <Select
+            value={selectedPharmacyId}
+            onValueChange={setSelectedPharmacyId}
+            disabled={!selectedTenantId}
+          >
+            <SelectTrigger className="bg-white border-gray-200 shadow-sm">
+              <SelectValue placeholder={selectedTenantId ? "Choose a pharmacy" : "Select tenant first"} />
+            </SelectTrigger>
+            <SelectContent>
+              {pharmaciesData?.data?.map((pharmacy: any) => (
+                <SelectItem key={pharmacy.id} value={pharmacy.id}>
+                  {pharmacy.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -513,8 +584,8 @@ export default function BranchesPage() {
       {!hasSelection ? (
         <div className="bg-white rounded-xl border border-gray-200 shadow-lg p-12 text-center">
           <MapPin className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-gray-700 mb-2">No Tenant Selected</h3>
-          <p className="text-gray-500">Please select a tenant to view and manage their branches</p>
+          <h3 className="text-xl font-semibold text-gray-700 mb-2">No Selection</h3>
+          <p className="text-gray-500">Please select a tenant and pharmacy to view and manage branches</p>
         </div>
       ) : isLoading ? (
         <div className="flex items-center justify-center h-64">
@@ -523,7 +594,7 @@ export default function BranchesPage() {
             <p className="mt-4 text-gray-600">Loading branches...</p>
           </div>
         </div>
-      ) : filteredBranches.length === 0 ? (
+      ) : branches.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 shadow-lg p-12 text-center">
           <Map className="h-16 w-16 text-gray-300 mx-auto mb-4" />
           <h3 className="text-xl font-semibold text-gray-700 mb-2">No Branches Found</h3>
@@ -550,12 +621,14 @@ export default function BranchesPage() {
                 <TableHead className="font-semibold text-gray-900">Governorate</TableHead>
                 <TableHead className="font-semibold text-gray-900">City</TableHead>
                 <TableHead className="font-semibold text-gray-900">Address</TableHead>
+                <TableHead className="font-semibold text-gray-900">Tenant</TableHead>
+                <TableHead className="font-semibold text-gray-900">Pharmacy</TableHead>
                 <TableHead className="font-semibold text-gray-900">Created</TableHead>
                 <TableHead className="w-[100px] font-semibold text-gray-900">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredBranches.map((branch: Branch) => (
+              {branches.map((branch: any) => (
                 <TableRow key={branch.id} className="hover:bg-gray-50/50 transition-colors border-b border-gray-100">
                   <TableCell className="font-semibold text-gray-900">{branch.name}</TableCell>
                   <TableCell className="text-gray-600 text-sm">
@@ -565,41 +638,35 @@ export default function BranchesPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-gray-600">
-                    {getGovernorateById(branch.governorateId)?.name || 'N/A'}
+                    {branch.governorate?.stateEN || 'N/A'}
                   </TableCell>
                   <TableCell className="text-gray-600">
-                    {getCityById(branch.governorateId, branch.cityId)?.name || 'N/A'}
+                    {branch.city?.cityEN || 'N/A'}
                   </TableCell>
                   <TableCell className="text-gray-600 text-sm max-w-xs truncate" title={branch.address}>
                     {branch.address}
                   </TableCell>
                   <TableCell className="text-gray-600 text-sm">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium">{branch.pharmacy?.tenant?.name || 'N/A'}</span>
+                      <Badge variant="outline" className="w-fit text-xs">{branch.pharmacy?.tenant?.code || 'N/A'}</Badge>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-gray-600 text-sm">
+                    {branch.pharmacy?.name || 'N/A'}
+                  </TableCell>
+                  <TableCell className="text-gray-600 text-sm">
                     {new Date(branch.createdAt).toLocaleDateString()}
                   </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => openEditDialog(branch)}>
-                          <Edit className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => handleDeleteBranch(branch)}
-                          className="text-red-600"
-                        >
-                          <Trash className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => openEditDialog(branch)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDeleteBranch(branch)}>
+                        <Trash className="h-4 w-4 text-red-600" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -655,9 +722,9 @@ export default function BranchesPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {KUWAIT_GOVERNORATES.map((gov) => (
+                  {governoratesData?.map((gov: any) => (
                     <SelectItem key={gov.id} value={gov.id.toString()}>
-                      {gov.name}
+                      {gov.stateEN}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -678,9 +745,9 @@ export default function BranchesPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(KUWAIT_CITIES_BY_GOVERNORATE[formData.governorateId] || []).map((city) => (
+                  {citiesData?.map((city: any) => (
                     <SelectItem key={city.id} value={city.id.toString()}>
-                      {city.name}
+                      {city.cityEN}
                     </SelectItem>
                   ))}
                 </SelectContent>

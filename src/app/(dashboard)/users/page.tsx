@@ -31,17 +31,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
 import { User, PaginatedResponse, UserType } from '@/types/admin.types';
-import { Search, MoreVertical, Lock, Unlock, Key, Activity, UserX, UserCheck, Users, Plus } from 'lucide-react';
+import { Search, Lock, Unlock, Key, Activity, UserX, UserCheck, Users, Plus, Edit, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
 import { InputDialog } from '@/components/dialogs/InputDialog';
@@ -50,6 +42,7 @@ export default function UsersPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 500); // Debounce search with 500ms delay
+  const [tenantFilter, setTenantFilter] = useState<string>('ALL');
   const [userTypeFilter, setUserTypeFilter] = useState<UserType | 'ALL'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
@@ -62,22 +55,30 @@ export default function UsersPage() {
   const [lockDialogOpen, setLockDialogOpen] = useState(false);
   const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
   const [userForAction, setUserForAction] = useState<User | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editFormData, setEditFormData] = useState<User | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const queryClient = useQueryClient();
 
   // Form state for create user
   const [createFormData, setCreateFormData] = useState({
-    firstName: '',
-    lastName: '',
+    name: '',
     email: '',
     password: '',
+    phone: '',
     userType: UserType.PHARMACIST,
+    roleId: UserType.PHARMACIST,
     tenantId: '',
+    primaryPharmacyId: '',
+    primaryBranchId: '',
+    isActive: true,
+    emailVerified: false,
+    requirePasswordChange: true,
   });
 
   // Form errors state for create user
   const [createFormErrors, setCreateFormErrors] = useState({
-    firstName: '',
-    lastName: '',
+    name: '',
     email: '',
     password: '',
     tenantId: '',
@@ -90,16 +91,21 @@ export default function UsersPage() {
   useEffect(() => {
     if (createUserDialogOpen) {
       setCreateFormData({
-        firstName: '',
-        lastName: '',
+        name: '',
         email: '',
         password: '',
+        phone: '',
         userType: UserType.PHARMACIST,
+        roleId: UserType.PHARMACIST,
         tenantId: '',
+        primaryPharmacyId: '',
+        primaryBranchId: '',
+        isActive: true,
+        emailVerified: false,
+        requirePasswordChange: true,
       });
       setCreateFormErrors({
-        firstName: '',
-        lastName: '',
+        name: '',
         email: '',
         password: '',
         tenantId: '',
@@ -118,27 +124,18 @@ export default function UsersPage() {
   // Validation function for create user form
   const validateCreateUserForm = () => {
     const errors = {
-      firstName: '',
-      lastName: '',
+      name: '',
       email: '',
       password: '',
       tenantId: '',
     };
     let isValid = true;
 
-    if (!createFormData.firstName.trim()) {
-      errors.firstName = 'First name is required';
+    if (!createFormData.name.trim()) {
+      errors.name = 'Name is required';
       isValid = false;
-    } else if (createFormData.firstName.length < 2) {
-      errors.firstName = 'First name must be at least 2 characters';
-      isValid = false;
-    }
-
-    if (!createFormData.lastName.trim()) {
-      errors.lastName = 'Last name is required';
-      isValid = false;
-    } else if (createFormData.lastName.length < 2) {
-      errors.lastName = 'Last name must be at least 2 characters';
+    } else if (createFormData.name.length < 2) {
+      errors.name = 'Name must be at least 2 characters';
       isValid = false;
     }
 
@@ -189,10 +186,11 @@ export default function UsersPage() {
   };
 
   const { data, isLoading} = useQuery<PaginatedResponse<User>>({
-    queryKey: ['users', page, debouncedSearch, userTypeFilter, statusFilter],
+    queryKey: ['users', page, debouncedSearch, tenantFilter, userTypeFilter, statusFilter],
     queryFn: async () => {
       const params: Record<string, string | number> = { page };
       if (debouncedSearch) params.search = debouncedSearch;
+      if (tenantFilter !== 'ALL') params.tenantId = tenantFilter;
       if (userTypeFilter !== 'ALL') params.userType = userTypeFilter;
       if (statusFilter !== 'ALL') params.isActive = statusFilter === 'ACTIVE';
 
@@ -221,6 +219,58 @@ export default function UsersPage() {
     },
   });
 
+  // Fetch pharmacies for selection (filtered by tenant in create form)
+  const { data: pharmaciesData } = useQuery({
+    queryKey: ['pharmacies-for-user', createFormData.tenantId],
+    queryFn: async () => {
+      if (!createFormData.tenantId) return { data: [] };
+      const response = await api.get('/api/v1/admin/pharmacies', {
+        params: { tenantId: createFormData.tenantId }
+      });
+      return response.data;
+    },
+    enabled: !!createFormData.tenantId,
+  });
+
+  // Fetch branches for selection (filtered by pharmacy in create form)
+  const { data: branchesData } = useQuery({
+    queryKey: ['branches-for-user', createFormData.primaryPharmacyId],
+    queryFn: async () => {
+      if (!createFormData.primaryPharmacyId) return { data: [] };
+      const response = await api.get('/api/v1/admin/branches', {
+        params: { pharmacyId: createFormData.primaryPharmacyId }
+      });
+      return response.data;
+    },
+    enabled: !!createFormData.primaryPharmacyId,
+  });
+
+  // Fetch pharmacies for edit form (filtered by tenant)
+  const { data: editPharmaciesData } = useQuery({
+    queryKey: ['edit-pharmacies-for-user', editFormData?.tenantId],
+    queryFn: async () => {
+      if (!editFormData?.tenantId) return { data: [] };
+      const response = await api.get('/api/v1/admin/pharmacies', {
+        params: { tenantId: editFormData.tenantId }
+      });
+      return response.data;
+    },
+    enabled: !!editFormData?.tenantId && editDialogOpen,
+  });
+
+  // Fetch branches for edit form (filtered by pharmacy)
+  const { data: editBranchesData } = useQuery({
+    queryKey: ['edit-branches-for-user', editFormData?.primaryPharmacyId],
+    queryFn: async () => {
+      if (!editFormData?.primaryPharmacyId) return { data: [] };
+      const response = await api.get('/api/v1/admin/branches', {
+        params: { pharmacyId: editFormData.primaryPharmacyId }
+      });
+      return response.data;
+    },
+    enabled: !!editFormData?.primaryPharmacyId && editDialogOpen,
+  });
+
   // Create user mutation
   const createUserMutation = useMutation({
     mutationFn: async (userData: typeof createFormData) => {
@@ -231,12 +281,18 @@ export default function UsersPage() {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setCreateUserDialogOpen(false);
       setCreateFormData({
-        firstName: '',
-        lastName: '',
+        name: '',
         email: '',
         password: '',
+        phone: '',
         userType: UserType.PHARMACIST,
+        roleId: UserType.PHARMACIST,
         tenantId: '',
+        primaryPharmacyId: '',
+        primaryBranchId: '',
+        isActive: true,
+        emailVerified: false,
+        requirePasswordChange: true,
       });
       toast.success('User created successfully');
     },
@@ -322,6 +378,40 @@ export default function UsersPage() {
     },
   });
 
+  // Update user mutation
+  const updateUserMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<User> }) => {
+      const response = await api.put(`/api/v1/admin/users/${id}`, data);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      setEditDialogOpen(false);
+      setEditFormData(null);
+      toast.success('User updated successfully');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to update user');
+    },
+  });
+
+  // Delete user mutation
+  const deleteUserMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.delete(`/api/v1/admin/users/${id}`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      setDeleteDialogOpen(false);
+      setUserForAction(null);
+      toast.success('User deleted successfully');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to delete user');
+    },
+  });
+
   const handleCreateUser = () => {
     if (!validateCreateUserForm()) {
       return;
@@ -395,6 +485,42 @@ export default function UsersPage() {
     setActivityDialogOpen(true);
   };
 
+  const openEditDialog = (user: User) => {
+    setEditFormData(user);
+    setEditDialogOpen(true);
+  };
+
+  const handleUpdateUser = () => {
+    if (!editFormData) return;
+    updateUserMutation.mutate({
+      id: editFormData.id,
+      data: {
+        name: editFormData.name,
+        email: editFormData.email,
+        phone: editFormData.phone,
+        userType: editFormData.userType,
+        roleId: editFormData.roleId,
+        tenantId: editFormData.tenantId,
+        primaryPharmacyId: editFormData.primaryPharmacyId,
+        primaryBranchId: editFormData.primaryBranchId,
+        isActive: editFormData.isActive,
+        emailVerified: editFormData.emailVerified,
+        requirePasswordChange: editFormData.requirePasswordChange,
+      },
+    });
+  };
+
+  const openDeleteDialog = (user: User) => {
+    setUserForAction(user);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = () => {
+    if (userForAction) {
+      deleteUserMutation.mutate(userForAction.id);
+    }
+  };
+
   const getStatusBadge = (isActive: boolean) => {
     return (
       <Badge
@@ -463,35 +589,19 @@ export default function UsersPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="firstName">First Name *</Label>
-                  <Input
-                    id="firstName"
-                    value={createFormData.firstName}
-                    onChange={(e) => {
-                      setCreateFormData({ ...createFormData, firstName: e.target.value });
-                      if (createFormErrors.firstName) setCreateFormErrors({ ...createFormErrors, firstName: '' });
-                    }}
-                    placeholder="John"
-                    className={`mt-1 ${createFormErrors.firstName ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
-                  />
-                  {createFormErrors.firstName && <p className="text-xs text-red-600 mt-1">{createFormErrors.firstName}</p>}
-                </div>
-                <div>
-                  <Label htmlFor="lastName">Last Name *</Label>
-                  <Input
-                    id="lastName"
-                    value={createFormData.lastName}
-                    onChange={(e) => {
-                      setCreateFormData({ ...createFormData, lastName: e.target.value });
-                      if (createFormErrors.lastName) setCreateFormErrors({ ...createFormErrors, lastName: '' });
-                    }}
-                    placeholder="Doe"
-                    className={`mt-1 ${createFormErrors.lastName ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
-                  />
-                  {createFormErrors.lastName && <p className="text-xs text-red-600 mt-1">{createFormErrors.lastName}</p>}
-                </div>
+              <div>
+                <Label htmlFor="name">Full Name *</Label>
+                <Input
+                  id="name"
+                  value={createFormData.name}
+                  onChange={(e) => {
+                    setCreateFormData({ ...createFormData, name: e.target.value });
+                    if (createFormErrors.name) setCreateFormErrors({ ...createFormErrors, name: '' });
+                  }}
+                  placeholder="John Doe"
+                  className={`mt-1 ${createFormErrors.name ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+                />
+                {createFormErrors.name && <p className="text-xs text-red-600 mt-1">{createFormErrors.name}</p>}
               </div>
 
               <div>
@@ -531,10 +641,21 @@ export default function UsersPage() {
               </div>
 
               <div>
+                <Label htmlFor="phone">Phone Number</Label>
+                <Input
+                  id="phone"
+                  value={createFormData.phone}
+                  onChange={(e) => setCreateFormData({ ...createFormData, phone: e.target.value })}
+                  placeholder="+96599887766"
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
                 <Label htmlFor="userType">User Type *</Label>
                 <Select
                   value={createFormData.userType}
-                  onValueChange={(value) => setCreateFormData({ ...createFormData, userType: value as UserType })}
+                  onValueChange={(value) => setCreateFormData({ ...createFormData, userType: value as UserType, roleId: value as UserType })}
                 >
                   <SelectTrigger className="mt-1">
                     <SelectValue />
@@ -554,7 +675,7 @@ export default function UsersPage() {
                 <Select
                   value={createFormData.tenantId}
                   onValueChange={(value) => {
-                    setCreateFormData({ ...createFormData, tenantId: value });
+                    setCreateFormData({ ...createFormData, tenantId: value, primaryPharmacyId: '', primaryBranchId: '' });
                     if (createFormErrors.tenantId) setCreateFormErrors({ ...createFormErrors, tenantId: '' });
                   }}
                 >
@@ -570,6 +691,79 @@ export default function UsersPage() {
                   </SelectContent>
                 </Select>
                 {createFormErrors.tenantId && <p className="text-xs text-red-600 mt-1">{createFormErrors.tenantId}</p>}
+              </div>
+
+              <div>
+                <Label htmlFor="primaryPharmacyId">Primary Pharmacy</Label>
+                <Select
+                  value={createFormData.primaryPharmacyId}
+                  onValueChange={(value) => setCreateFormData({ ...createFormData, primaryPharmacyId: value, primaryBranchId: '' })}
+                  disabled={!createFormData.tenantId}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder={createFormData.tenantId ? "Select pharmacy" : "Select tenant first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pharmaciesData?.data?.map((pharmacy: any) => (
+                      <SelectItem key={pharmacy.id} value={pharmacy.id}>
+                        {pharmacy.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="primaryBranchId">Primary Branch</Label>
+                <Select
+                  value={createFormData.primaryBranchId}
+                  onValueChange={(value) => setCreateFormData({ ...createFormData, primaryBranchId: value })}
+                  disabled={!createFormData.primaryPharmacyId}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder={createFormData.primaryPharmacyId ? "Select branch" : "Select pharmacy first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branchesData?.data?.map((branch: any) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="isActive"
+                    checked={createFormData.isActive}
+                    onChange={(e) => setCreateFormData({ ...createFormData, isActive: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="isActive" className="cursor-pointer">Active</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="emailVerified"
+                    checked={createFormData.emailVerified}
+                    onChange={(e) => setCreateFormData({ ...createFormData, emailVerified: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="emailVerified" className="cursor-pointer">Email Verified</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="requirePasswordChange"
+                    checked={createFormData.requirePasswordChange}
+                    onChange={(e) => setCreateFormData({ ...createFormData, requirePasswordChange: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="requirePasswordChange" className="cursor-pointer">Require Password Change</Label>
+                </div>
               </div>
             </div>
             <DialogFooter className="mt-6">
@@ -598,6 +792,20 @@ export default function UsersPage() {
             className="pl-10 bg-white border-gray-200 focus:border-blue-300 shadow-sm"
           />
         </div>
+
+        <Select value={tenantFilter} onValueChange={(value) => setTenantFilter(value)}>
+          <SelectTrigger className="w-[200px] bg-white border-gray-200 shadow-sm">
+            <SelectValue placeholder="Filter by tenant" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All Tenants</SelectItem>
+            {tenantsData?.data?.map((tenant: any) => (
+              <SelectItem key={tenant.id} value={tenant.id}>
+                {tenant.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         <Select value={userTypeFilter} onValueChange={(value) => setUserTypeFilter(value as UserType | 'ALL')}>
           <SelectTrigger className="w-[200px] bg-white border-gray-200 shadow-sm">
@@ -642,7 +850,7 @@ export default function UsersPage() {
             {data?.data.map((user) => (
               <TableRow key={user.id} className="hover:bg-gray-50/50 transition-colors border-b border-gray-100">
                 <TableCell className="font-semibold text-gray-900">
-                  {user.firstName} {user.lastName}
+                  {user.name}
                 </TableCell>
                 <TableCell className="text-gray-600 text-sm">{user.email}</TableCell>
                 <TableCell>
@@ -660,49 +868,39 @@ export default function UsersPage() {
                 <TableCell className="text-gray-600 text-sm">
                   {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
                 </TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm">
-                        <MoreVertical className="h-4 w-4" />
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => openActivityDialog(user)} title="View Activity">
+                      <Activity className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => openResetPasswordDialog(user)} title="Reset Password">
+                      <Key className="h-4 w-4" />
+                    </Button>
+                    {user.isActive ? (
+                      <Button variant="ghost" size="sm" onClick={() => handleDeactivateUser(user)} title="Deactivate">
+                        <UserX className="h-4 w-4 text-orange-600" />
                       </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => openActivityDialog(user)}>
-                        <Activity className="h-4 w-4 mr-2" />
-                        View Activity
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => openResetPasswordDialog(user)}>
-                        <Key className="h-4 w-4 mr-2" />
-                        Reset Password
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      {user.isActive ? (
-                        <DropdownMenuItem onClick={() => handleDeactivateUser(user)}>
-                          <UserX className="h-4 w-4 mr-2" />
-                          Deactivate
-                        </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem onClick={() => handleActivateUser(user)}>
-                          <UserCheck className="h-4 w-4 mr-2" />
-                          Activate
-                        </DropdownMenuItem>
-                      )}
-                      {user.lockedUntil && new Date(user.lockedUntil) > new Date() ? (
-                        <DropdownMenuItem onClick={() => handleUnlockUser(user)}>
-                          <Unlock className="h-4 w-4 mr-2" />
-                          Unlock
-                        </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem onClick={() => handleLockUser(user)} className="text-red-600">
-                          <Lock className="h-4 w-4 mr-2" />
-                          Lock
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                    ) : (
+                      <Button variant="ghost" size="sm" onClick={() => handleActivateUser(user)} title="Activate">
+                        <UserCheck className="h-4 w-4 text-green-600" />
+                      </Button>
+                    )}
+                    {user.lockedUntil && new Date(user.lockedUntil) > new Date() ? (
+                      <Button variant="ghost" size="sm" onClick={() => handleUnlockUser(user)} title="Unlock">
+                        <Unlock className="h-4 w-4 text-green-600" />
+                      </Button>
+                    ) : (
+                      <Button variant="ghost" size="sm" onClick={() => handleLockUser(user)} title="Lock">
+                        <Lock className="h-4 w-4 text-yellow-600" />
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="sm" onClick={() => openEditDialog(user)} title="Edit">
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => openDeleteDialog(user)} title="Delete">
+                      <Trash2 className="h-4 w-4 text-red-600" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -716,7 +914,7 @@ export default function UsersPage() {
           <DialogHeader className="bg-gradient-to-r from-indigo-50 to-blue-50 -mt-6 -mx-6 px-6 py-4 mb-6 border-b">
             <DialogTitle className="text-xl">Reset Password</DialogTitle>
             <DialogDescription>
-              Set a new password for {selectedUser?.firstName} {selectedUser?.lastName}
+              Set a new password for {selectedUser?.name}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -761,7 +959,7 @@ export default function UsersPage() {
           <DialogHeader className="bg-gradient-to-r from-teal-50 to-emerald-50 -mt-6 -mx-6 px-6 py-4 mb-6 border-b">
             <DialogTitle className="text-xl">User Activity</DialogTitle>
             <DialogDescription>
-              Activity history for {selectedUser?.firstName} {selectedUser?.lastName}
+              Activity history for {selectedUser?.name}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
@@ -800,7 +998,7 @@ export default function UsersPage() {
         open={activateDialogOpen}
         onOpenChange={setActivateDialogOpen}
         title="Activate User"
-        description={`Are you sure you want to activate "${userForAction?.firstName} ${userForAction?.lastName}"? This will restore the user's access to the platform.`}
+        description={`Are you sure you want to activate "${userForAction?.name}"? This will restore the user's access to the platform.`}
         confirmLabel="Activate"
         onConfirm={handleActivateConfirm}
         isLoading={activateMutation.isPending}
@@ -812,7 +1010,7 @@ export default function UsersPage() {
         open={deactivateDialogOpen}
         onOpenChange={setDeactivateDialogOpen}
         title="Deactivate User"
-        description={`Are you sure you want to deactivate "${userForAction?.firstName} ${userForAction?.lastName}"? The user will lose access to the platform.`}
+        description={`Are you sure you want to deactivate "${userForAction?.name}"? The user will lose access to the platform.`}
         confirmLabel="Deactivate"
         onConfirm={handleDeactivateConfirm}
         isLoading={deactivateMutation.isPending}
@@ -824,7 +1022,7 @@ export default function UsersPage() {
         open={lockDialogOpen}
         onOpenChange={setLockDialogOpen}
         title="Lock User Account"
-        description={`Enter the reason for locking "${userForAction?.firstName} ${userForAction?.lastName}'s" account`}
+        description={`Enter the reason for locking "${userForAction?.name}'s" account`}
         label="Lock Reason"
         placeholder="e.g., Security concern, Policy violation..."
         confirmLabel="Lock Account"
@@ -837,12 +1035,196 @@ export default function UsersPage() {
         open={unlockDialogOpen}
         onOpenChange={setUnlockDialogOpen}
         title="Unlock User Account"
-        description={`Are you sure you want to unlock "${userForAction?.firstName} ${userForAction?.lastName}'s" account? The user will regain access to the platform.`}
+        description={`Are you sure you want to unlock "${userForAction?.name}'s" account? The user will regain access to the platform.`}
         confirmLabel="Unlock"
         onConfirm={handleUnlockConfirm}
         isLoading={unlockMutation.isPending}
         variant="default"
       />
+
+      {/* Delete User Dialog */}
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="Delete User"
+        description={`Are you sure you want to delete "${userForAction?.name}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={handleDeleteConfirm}
+        isLoading={deleteUserMutation.isPending}
+        variant="danger"
+      />
+
+      {/* Edit User Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-md bg-white">
+          <DialogHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 -mt-6 -mx-6 px-6 py-4 mb-6 border-b">
+            <DialogTitle className="text-xl">Edit User</DialogTitle>
+            <DialogDescription>
+              Update user information
+            </DialogDescription>
+          </DialogHeader>
+          {editFormData && (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="edit-name">Full Name</Label>
+                <Input
+                  id="edit-name"
+                  value={editFormData.name || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                  placeholder="John Doe"
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-email">Email Address</Label>
+                <Input
+                  id="edit-email"
+                  type="email"
+                  value={editFormData.email}
+                  onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                  placeholder="john.doe@example.com"
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-phone">Phone Number</Label>
+                <Input
+                  id="edit-phone"
+                  value={editFormData.phone || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                  placeholder="+96599887766"
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-userType">User Type</Label>
+                <Select
+                  value={editFormData.userType}
+                  onValueChange={(value) => setEditFormData({ ...editFormData, userType: value as UserType, roleId: value as UserType })}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={UserType.SUPER_ADMIN}>Super Admin</SelectItem>
+                    <SelectItem value={UserType.TENANT_ADMIN}>Tenant Admin</SelectItem>
+                    <SelectItem value={UserType.PHARMACIST}>Pharmacist</SelectItem>
+                    <SelectItem value={UserType.BRANCH_MANAGER}>Branch Manager</SelectItem>
+                    <SelectItem value={UserType.ASSISTANT}>Assistant</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-tenant">Tenant</Label>
+                <Select
+                  value={editFormData.tenantId}
+                  onValueChange={(value) => setEditFormData({ ...editFormData, tenantId: value, primaryPharmacyId: '', primaryBranchId: '' })}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select tenant" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tenantsData?.data?.map((tenant: any) => (
+                      <SelectItem key={tenant.id} value={tenant.id}>
+                        {tenant.name} ({tenant.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-primaryPharmacyId">Primary Pharmacy</Label>
+                <Select
+                  value={editFormData.primaryPharmacyId || ''}
+                  onValueChange={(value) => setEditFormData({ ...editFormData, primaryPharmacyId: value, primaryBranchId: '' })}
+                  disabled={!editFormData.tenantId}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder={editFormData.tenantId ? "Select pharmacy" : "Select tenant first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {editPharmaciesData?.data?.map((pharmacy: any) => (
+                      <SelectItem key={pharmacy.id} value={pharmacy.id}>
+                        {pharmacy.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-primaryBranchId">Primary Branch</Label>
+                <Select
+                  value={editFormData.primaryBranchId || ''}
+                  onValueChange={(value) => setEditFormData({ ...editFormData, primaryBranchId: value })}
+                  disabled={!editFormData.primaryPharmacyId}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder={editFormData.primaryPharmacyId ? "Select branch" : "Select pharmacy first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {editBranchesData?.data?.map((branch: any) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="edit-isActive"
+                    checked={editFormData.isActive ?? true}
+                    onChange={(e) => setEditFormData({ ...editFormData, isActive: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="edit-isActive" className="cursor-pointer">Active</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="edit-emailVerified"
+                    checked={editFormData.emailVerified ?? false}
+                    onChange={(e) => setEditFormData({ ...editFormData, emailVerified: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="edit-emailVerified" className="cursor-pointer">Email Verified</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="edit-requirePasswordChange"
+                    checked={editFormData.requirePasswordChange ?? false}
+                    onChange={(e) => setEditFormData({ ...editFormData, requirePasswordChange: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="edit-requirePasswordChange" className="cursor-pointer">Require Password Change</Label>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="mt-6">
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdateUser}
+              disabled={updateUserMutation.isPending}
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+            >
+              {updateUserMutation.isPending ? 'Updating...' : 'Update User'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {data && (
         <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">

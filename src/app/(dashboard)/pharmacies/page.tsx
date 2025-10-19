@@ -32,9 +32,24 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
-import { Pharmacy } from '@/types/admin.types';
+import { Pharmacy, UserType, Tenant, PaginatedResponse } from '@/types/admin.types';
 import { useDebounce } from '@/hooks/useDebounce';
-import { KUWAIT_GOVERNORATES, getCitiesByGovernorate } from '@/constants/kuwait-locations';
+import { useAuth } from '@/contexts/AuthContext';
+import api from '@/lib/api';
+
+// Types for lookups API
+interface Governorate {
+  id: number;
+  stateEN: string;
+  stateAR: string;
+}
+
+interface City {
+  id: number;
+  cityEN: string;
+  cityAR: string;
+  governorateId: number;
+}
 
 export default function PharmaciesPage() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -49,22 +64,25 @@ export default function PharmaciesPage() {
     name: '',
     phone: '',
     licenseNumber: '',
-    taxNumber: '',
     address: '',
     governorateId: 0,
     cityId: 0,
     brandColor: '#0066CC',
+    tenantId: '', // For Super Admin
   });
+
+  const [logoFile, setLogoFile] = useState<File | null>(null);
 
   const [formErrors, setFormErrors] = useState({
     name: '',
     phone: '',
     licenseNumber: '',
-    taxNumber: '',
     address: '',
     governorateId: '',
     cityId: '',
     brandColor: '',
+    tenantId: '',
+    logoFile: '',
   });
 
   const [editFormErrors, setEditFormErrors] = useState({
@@ -76,40 +94,94 @@ export default function PharmaciesPage() {
   });
 
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  // Check if user is Super Admin
+  const isSuperAdmin = user?.userType === UserType.SUPER_ADMIN;
+
+  // Fetch tenants for Super Admin
+  const { data: tenantsData } = useQuery<PaginatedResponse<Tenant>>({
+    queryKey: ['tenants'],
+    queryFn: async () => {
+      const response = await api.get('/api/v1/admin/tenants');
+      return response.data;
+    },
+    enabled: isSuperAdmin, // Only fetch if Super Admin
+  });
+
+  const tenants = tenantsData?.data || [];
+
+  // Fetch governorates from API
+  const { data: governorates = [] } = useQuery<Governorate[]>({
+    queryKey: ['governorates'],
+    queryFn: async () => {
+      const response = await api.get('/api/v1/lookups/governorates');
+      return response.data;
+    },
+  });
+
+  // Fetch cities based on selected governorate
+  const { data: cities = [] } = useQuery<City[]>({
+    queryKey: ['cities', formData.governorateId],
+    queryFn: async () => {
+      if (!formData.governorateId) return [];
+      const response = await api.get(`/api/v1/lookups/cities?governorateId=${formData.governorateId}`);
+      return response.data;
+    },
+    enabled: !!formData.governorateId,
+  });
 
   // Fetch pharmacies with search
   const { data: pharmacies, isLoading } = useQuery({
     queryKey: ['pharmacies', debouncedSearch],
     queryFn: async () => {
-      const token = localStorage.getItem('accessToken');
-      const params = new URLSearchParams();
-      if (debouncedSearch) params.append('search', debouncedSearch);
-
-      const response = await fetch(
-        `http://localhost:3000/api/v1/pharmacy?${params.toString()}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        }
-      );
-      if (!response.ok) throw new Error('Failed to fetch pharmacies');
-      const result = await response.json();
-      return result.data || [];
+      const response = await api.get('/api/v1/admin/pharmacies', {
+        params: debouncedSearch ? { search: debouncedSearch } : undefined,
+      });
+      // Response after interceptor: { success: true, data: [...], total: N }
+      return response.data.data || [];
     },
   });
 
   // Create pharmacy mutation
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch('http://localhost:3000/api/v1/pharmacy', {
+      const token = localStorage.getItem('admin_access_token');
+
+      // Use admin endpoint for Super Admin, regular endpoint for others
+      const endpoint = isSuperAdmin
+        ? 'http://localhost:3000/api/v1/admin/pharmacies'
+        : 'http://localhost:3000/api/v1/pharmacy';
+
+      // Create FormData to support file upload
+      const formDataToSend = new FormData();
+
+      // Add all text fields
+      formDataToSend.append('name', data.name);
+      formDataToSend.append('phone', data.phone);
+      formDataToSend.append('licenseNumber', data.licenseNumber);
+      formDataToSend.append('address', data.address);
+      formDataToSend.append('governorateId', data.governorateId.toString());
+      formDataToSend.append('cityId', data.cityId.toString());
+      formDataToSend.append('brandColor', data.brandColor);
+
+      // Add tenantId for Super Admin
+      if (isSuperAdmin && data.tenantId) {
+        formDataToSend.append('tenantId', data.tenantId);
+      }
+
+      // Add logo file
+      if (logoFile) {
+        formDataToSend.append('logoUrl', logoFile);
+      }
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
+          // Don't set Content-Type - browser will set it with boundary for multipart/form-data
         },
-        body: JSON.stringify(data),
+        body: formDataToSend,
       });
       if (!response.ok) {
         const error = await response.json();
@@ -130,9 +202,9 @@ export default function PharmaciesPage() {
   // Update pharmacy mutation
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<typeof formData> }) => {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`http://localhost:3000/api/v1/pharmacy/${id}`, {
-        method: 'PATCH',
+      const token = localStorage.getItem('admin_access_token');
+      const response = await fetch(`http://localhost:3000/api/v1/admin/pharmacies/${id}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
@@ -158,8 +230,8 @@ export default function PharmaciesPage() {
   // Delete pharmacy mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`http://localhost:3000/api/v1/pharmacy/${id}`, {
+      const token = localStorage.getItem('admin_access_token');
+      const response = await fetch(`http://localhost:3000/api/v1/admin/pharmacies/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -187,13 +259,26 @@ export default function PharmaciesPage() {
       name: '',
       phone: '',
       licenseNumber: '',
-      taxNumber: '',
       address: '',
       governorateId: '',
       cityId: '',
       brandColor: '',
+      tenantId: '',
+      logoFile: '',
     };
     let isValid = true;
+
+    // Validate tenantId for Super Admin
+    if (isSuperAdmin && !formData.tenantId.trim()) {
+      errors.tenantId = 'Please select a tenant';
+      isValid = false;
+    }
+
+    // Validate logo file
+    if (!logoFile) {
+      errors.logoFile = 'Company logo is required';
+      isValid = false;
+    }
 
     if (!formData.name.trim()) {
       errors.name = 'Pharmacy name is required';
@@ -219,11 +304,6 @@ export default function PharmaciesPage() {
       isValid = false;
     } else if (!/^\d+$/.test(formData.licenseNumber)) {
       errors.licenseNumber = 'License number must contain only numbers';
-      isValid = false;
-    }
-
-    if (formData.taxNumber && !/^\d+$/.test(formData.taxNumber)) {
-      errors.taxNumber = 'Tax number must contain only numbers';
       isValid = false;
     }
 
@@ -339,11 +419,11 @@ export default function PharmaciesPage() {
       name: pharmacy.name,
       phone: pharmacy.phone,
       licenseNumber: pharmacy.licenseNumber,
-      taxNumber: pharmacy.taxNumber || '',
       address: pharmacy.address,
       governorateId: pharmacy.governorateId,
       cityId: pharmacy.cityId,
       brandColor: pharmacy.brandColor,
+      tenantId: pharmacy.tenantId || '',
     });
     setEditFormErrors({
       name: '',
@@ -372,37 +452,42 @@ export default function PharmaciesPage() {
         name: '',
         phone: '',
         licenseNumber: '',
-        taxNumber: '',
         address: '',
         governorateId: 0,
         cityId: 0,
         brandColor: '#0066CC',
+        tenantId: '',
       });
       setFormErrors({
         name: '',
         phone: '',
         licenseNumber: '',
-        taxNumber: '',
         address: '',
         governorateId: '',
         cityId: '',
         brandColor: '',
+        tenantId: '',
+        logoFile: '',
       });
+      setLogoFile(null);
     }
   }, [createDialogOpen]);
 
   const getGovernorateById = (id: number) => {
-    return KUWAIT_GOVERNORATES.find(gov => gov.id === id);
+    return governorates.find(gov => gov.id === id);
   };
 
-  const getCityById = (govId: number, cityId: number) => {
-    const cities = getCitiesByGovernorate(govId);
-    return cities.find(city => city.id === cityId);
+  const getCityById = (pharmacy: Pharmacy) => {
+    // Use cityName from pharmacy object if available
+    if (pharmacy.cityName) {
+      return { cityEN: pharmacy.cityName };
+    }
+    // Fallback: this won't work perfectly since we don't have all cities loaded
+    // but the backend should return cityName
+    return null;
   };
 
-  const filteredCities = formData.governorateId
-    ? getCitiesByGovernorate(formData.governorateId)
-    : [];
+  // Cities are now fetched via React Query above
 
   return (
     <div className="p-8 bg-gradient-to-br from-gray-50 via-blue-50/30 to-cyan-50/30 min-h-screen">
@@ -491,7 +576,7 @@ export default function PharmaciesPage() {
                       <TableCell>
                         <div className="flex items-center gap-1 text-sm text-gray-600">
                           <MapPin className="h-3 w-3" />
-                          {getGovernorateById(pharmacy.governorateId)?.name}
+                          {pharmacy.governorateName || getGovernorateById(pharmacy.governorateId)?.stateEN}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -547,6 +632,35 @@ export default function PharmaciesPage() {
           </DialogHeader>
 
           <div className="grid gap-4">
+            {/* Tenant Selector - Only for Super Admin */}
+            {isSuperAdmin && (
+              <div>
+                <label htmlFor="tenantId" className="text-sm font-medium">
+                  Tenant <span className="text-red-500">*</span>
+                </label>
+                <Select
+                  value={formData.tenantId}
+                  onValueChange={(value) => {
+                    setFormData({ ...formData, tenantId: value });
+                    if (formErrors.tenantId) setFormErrors({ ...formErrors, tenantId: '' });
+                  }}
+                >
+                  <SelectTrigger className={`mt-1 ${formErrors.tenantId ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}>
+                    <SelectValue placeholder="Select tenant" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tenants.map((tenant: Tenant) => (
+                      <SelectItem key={tenant.id} value={tenant.id}>
+                        {tenant.name} ({tenant.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {formErrors.tenantId && <p className="text-xs text-red-600 mt-1">{formErrors.tenantId}</p>}
+                <p className="text-xs text-gray-500 mt-1">Select which tenant this pharmacy belongs to</p>
+              </div>
+            )}
+
             {/* Name */}
             <div>
               <label htmlFor="name" className="text-sm font-medium">
@@ -583,40 +697,43 @@ export default function PharmaciesPage() {
               {formErrors.phone && <p className="text-xs text-red-600 mt-1">{formErrors.phone}</p>}
             </div>
 
-            {/* License & Tax Number */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="licenseNumber" className="text-sm font-medium">
-                  License Number <span className="text-red-500">*</span>
-                </label>
-                <Input
-                  id="licenseNumber"
-                  value={formData.licenseNumber}
-                  onChange={(e) => {
-                    setFormData({ ...formData, licenseNumber: e.target.value });
-                    if (formErrors.licenseNumber) setFormErrors({ ...formErrors, licenseNumber: '' });
-                  }}
-                  placeholder="123456789"
-                  className={`mt-1 ${formErrors.licenseNumber ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
-                />
-                {formErrors.licenseNumber && <p className="text-xs text-red-600 mt-1">{formErrors.licenseNumber}</p>}
-              </div>
-              <div>
-                <label htmlFor="taxNumber" className="text-sm font-medium">
-                  Tax Number
-                </label>
-                <Input
-                  id="taxNumber"
-                  value={formData.taxNumber}
-                  onChange={(e) => {
-                    setFormData({ ...formData, taxNumber: e.target.value });
-                    if (formErrors.taxNumber) setFormErrors({ ...formErrors, taxNumber: '' });
-                  }}
-                  placeholder="987654321"
-                  className={`mt-1 ${formErrors.taxNumber ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
-                />
-                {formErrors.taxNumber && <p className="text-xs text-red-600 mt-1">{formErrors.taxNumber}</p>}
-              </div>
+            {/* License Number */}
+            <div>
+              <label htmlFor="licenseNumber" className="text-sm font-medium">
+                License Number <span className="text-red-500">*</span>
+              </label>
+              <Input
+                id="licenseNumber"
+                value={formData.licenseNumber}
+                onChange={(e) => {
+                  setFormData({ ...formData, licenseNumber: e.target.value });
+                  if (formErrors.licenseNumber) setFormErrors({ ...formErrors, licenseNumber: '' });
+                }}
+                placeholder="123456789"
+                className={`mt-1 ${formErrors.licenseNumber ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+              />
+              {formErrors.licenseNumber && <p className="text-xs text-red-600 mt-1">{formErrors.licenseNumber}</p>}
+            </div>
+
+            {/* Company Logo */}
+            <div>
+              <label htmlFor="logoFile" className="text-sm font-medium">
+                Company Logo <span className="text-red-500">*</span>
+              </label>
+              <Input
+                id="logoFile"
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  setLogoFile(file);
+                  if (formErrors.logoFile) setFormErrors({ ...formErrors, logoFile: '' });
+                }}
+                className={`mt-1 ${formErrors.logoFile ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+              />
+              {formErrors.logoFile && <p className="text-xs text-red-600 mt-1">{formErrors.logoFile}</p>}
+              {logoFile && <p className="text-xs text-green-600 mt-1">Selected: {logoFile.name}</p>}
+              <p className="text-xs text-gray-500 mt-1">Accepted formats: PNG, JPEG, JPG, WEBP, GIF</p>
             </div>
 
             {/* Address */}
@@ -654,9 +771,9 @@ export default function PharmaciesPage() {
                     <SelectValue placeholder="Select governorate" />
                   </SelectTrigger>
                   <SelectContent>
-                    {KUWAIT_GOVERNORATES.map((gov) => (
+                    {governorates.map((gov) => (
                       <SelectItem key={gov.id} value={gov.id.toString()}>
-                        {gov.name}
+                        {gov.stateEN}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -679,9 +796,9 @@ export default function PharmaciesPage() {
                     <SelectValue placeholder="Select city" />
                   </SelectTrigger>
                   <SelectContent>
-                    {filteredCities.map((city) => (
+                    {cities.map((city) => (
                       <SelectItem key={city.id} value={city.id.toString()}>
-                        {city.name}
+                        {city.cityEN}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -821,9 +938,9 @@ export default function PharmaciesPage() {
                     <SelectValue placeholder="Select governorate" />
                   </SelectTrigger>
                   <SelectContent>
-                    {KUWAIT_GOVERNORATES.map((gov) => (
+                    {governorates.map((gov) => (
                       <SelectItem key={gov.id} value={gov.id.toString()}>
-                        {gov.name}
+                        {gov.stateEN}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -846,9 +963,9 @@ export default function PharmaciesPage() {
                     <SelectValue placeholder="Select city" />
                   </SelectTrigger>
                   <SelectContent>
-                    {filteredCities.map((city) => (
+                    {cities.map((city) => (
                       <SelectItem key={city.id} value={city.id.toString()}>
-                        {city.name}
+                        {city.cityEN}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -973,13 +1090,13 @@ export default function PharmaciesPage() {
                 <div>
                   <label className="text-sm font-medium text-gray-500">Governorate</label>
                   <p className="mt-1">
-                    {getGovernorateById(selectedPharmacy.governorateId)?.name}
+                    {selectedPharmacy.governorateName || getGovernorateById(selectedPharmacy.governorateId)?.stateEN}
                   </p>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-500">City</label>
                   <p className="mt-1">
-                    {getCityById(selectedPharmacy.governorateId, selectedPharmacy.cityId)?.name}
+                    {selectedPharmacy.cityName || getCityById(selectedPharmacy)?.cityEN}
                   </p>
                 </div>
               </div>

@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev)",
+      "Bash(PORT=3001 npm run dev)",
+      "Read(//Users/mersall/Desktop/Haac/**)",
+      "Bash(npm run start:dev)",
+      "Bash(curl -s http://localhost:3001)",
+      "Bash(/dev/null)",
+      "Bash(curl -s http://localhost:3000/health)",
+      "Bash(curl -s http://localhost:3001/tenants)",
+      "Bash(cat /Users/mersall/Desktop/Haac/pharmacy-admin-dashboard/@tailwind.config.ts)",
+      "Bash(curl -s http://localhost:3001/_next/static/css/app/layout.css)",
+      "WebSearch",
+      "Read(//Users/mersall/.config/**)",
+      "Read(//Users/mersall/Library/**)",
+      "Read(//Users/mersall/**)",
+      "Bash(cat \"/Users/mersall/Library/Application Support/Claude/claude_desktop_config.json\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(npx -y @playwright/mcp@latest --help)",
+      "Bash(cat ~/.config/claude-code/mcp_config.json)",
+      "mcp__playwright__browser_navigate",
+      "Bash(lsof -ti:3001)",
+      "Bash(xargs kill -9)",
+      "Bash(lsof -ti:3000)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -5,11 +5,35 @@ export enum TenantStatus {
   TRIAL = 'TRIAL',
 }
 
+export enum TenantType {
+  CHAIN = 'CHAIN',
+  INDEPENDENT = 'INDEPENDENT',
+  FRANCHISE = 'FRANCHISE',
+  ENTERPRISE = 'ENTERPRISE',
+}
+
 export enum SubscriptionPlan {
-  FREE = 'FREE',
-  BASIC = 'BASIC',
+  STARTER = 'STARTER',
   PROFESSIONAL = 'PROFESSIONAL',
   ENTERPRISE = 'ENTERPRISE',
+  CUSTOM = 'CUSTOM',
+}
+
+// DTO for creating tenant (simple, modular approach)
+export interface CreateTenantDto {
+  name: string;
+  code: string;
+  type: TenantType;
+  subscriptionPlan: SubscriptionPlan;
+  billingEmail?: string;
+  maxPharmacies?: number;
+  maxBranchesPerPharmacy?: number;
+  maxUsers?: number;
+  settings?: {
+    timezone?: string;
+    currency?: string;
+    language?: string;
+  };
 }
 
 export enum UserType {
@@ -26,6 +50,7 @@ export interface Tenant {
   id: string;
   name: string;
   code: string;
+  type: TenantType;
   status: TenantStatus;
   subscriptionPlan: SubscriptionPlan;
   trialEndsAt?: Date;
@@ -39,10 +64,16 @@ export interface Tenant {
 export interface User {
   id: string;
   email: string;
-  firstName: string;
-  lastName: string;
+  name: string;
+  phone?: string;
   userType: UserType;
+  roleId: string;
+  tenantId: string;
+  primaryPharmacyId?: string;
+  primaryBranchId?: string;
   isActive: boolean;
+  emailVerified: boolean;
+  requirePasswordChange?: boolean;
   lastLogin?: Date;
   failedLoginAttempts: number;
   lockedUntil?: Date;
