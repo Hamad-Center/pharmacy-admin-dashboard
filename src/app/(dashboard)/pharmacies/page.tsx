@@ -538,6 +538,7 @@ export default function PharmaciesPage() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Code</TableHead>
+                  <TableHead>Tenant</TableHead>
                   <TableHead>License</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Location</TableHead>
@@ -548,13 +549,13 @@ export default function PharmaciesPage() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                    <TableCell colSpan={8} className="text-center py-8 text-gray-500">
                       Loading pharmacies...
                     </TableCell>
                   </TableRow>
                 ) : pharmacies?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                    <TableCell colSpan={8} className="text-center py-8 text-gray-500">
                       No pharmacies found
                     </TableCell>
                   </TableRow>
@@ -570,6 +571,11 @@ export default function PharmaciesPage() {
                       </TableCell>
                       <TableCell>
                         <code className="text-xs bg-gray-100 px-2 py-1 rounded">{pharmacy.code}</code>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm text-gray-600">
+                          {pharmacy.tenant?.name || '-'}
+                        </div>
                       </TableCell>
                       <TableCell>{pharmacy.licenseNumber}</TableCell>
                       <TableCell className="font-mono text-sm">{pharmacy.phone}</TableCell>

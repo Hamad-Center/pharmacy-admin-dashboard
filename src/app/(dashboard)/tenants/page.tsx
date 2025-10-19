@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -170,17 +171,21 @@ export default function TenantsPage() {
       [TenantStatus.TRIAL]: { variant: 'outline', label: 'Trial' },
     };
 
-    const { variant, label } = variants[status];
-    return <Badge variant={variant}>{label}</Badge>;
+    const variantData = variants[status] || { variant: 'secondary' as const, label: status || 'Unknown' };
+    return <Badge variant={variantData.variant}>{variantData.label}</Badge>;
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Tenants</h1>
-          <p className="text-muted-foreground mt-1">Manage pharmacy organizations</p>
-        </div>
+    <div className="p-8 bg-gradient-to-br from-gray-50 via-blue-50/30 to-cyan-50/30 min-h-screen">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+              Tenants Management
+            </h1>
+            <p className="text-gray-600 mt-1">Manage pharmacy organizations</p>
+          </div>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -350,112 +355,118 @@ export default function TenantsPage() {
         </Dialog>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-4">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search tenants..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Filter by status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ALL">All Statuses</SelectItem>
-            <SelectItem value={TenantStatus.ACTIVE}>Active</SelectItem>
-            <SelectItem value={TenantStatus.INACTIVE}>Inactive</SelectItem>
-            <SelectItem value={TenantStatus.SUSPENDED}>Suspended</SelectItem>
-            <SelectItem value={TenantStatus.TRIAL}>Trial</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+        {/* Filters */}
+        <Card className="bg-white/80 backdrop-blur-sm border-gray-200 shadow-sm">
+          <CardContent className="pt-6">
+            <div className="flex gap-4">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Search tenants by name or code..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Statuses</SelectItem>
+                  <SelectItem value={TenantStatus.ACTIVE}>Active</SelectItem>
+                  <SelectItem value={TenantStatus.INACTIVE}>Inactive</SelectItem>
+                  <SelectItem value={TenantStatus.SUSPENDED}>Suspended</SelectItem>
+                  <SelectItem value={TenantStatus.TRIAL}>Trial</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
 
-      {/* Tenants Table */}
-      <div className="border rounded-lg bg-white dark:bg-gray-900">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Code</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Plan</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead className="w-[70px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                  Loading tenants...
-                </TableCell>
-              </TableRow>
-            ) : !data?.data || data.data.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center py-8">
-                  <div className="flex flex-col items-center gap-2">
-                    <Building2 className="h-12 w-12 text-muted-foreground/50" />
-                    <p className="text-muted-foreground">No tenants found</p>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              data.data.map((tenant) => (
-                <TableRow key={tenant.id}>
-                  <TableCell className="font-medium">{tenant.name}</TableCell>
-                  <TableCell>
-                    <code className="px-2 py-1 bg-muted rounded text-sm">{tenant.code}</code>
-                  </TableCell>
-                  <TableCell className="capitalize">{tenant.type.toLowerCase()}</TableCell>
-                  <TableCell className="capitalize">{tenant.subscriptionPlan.toLowerCase()}</TableCell>
-                  <TableCell>{getStatusBadge(tenant.status)}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {format(new Date(tenant.createdAt), 'MMM d, yyyy')}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        {tenant.status === TenantStatus.ACTIVE ? (
-                          <DropdownMenuItem
-                            onClick={() => suspendMutation.mutate(tenant.id)}
-                            className="text-destructive"
-                          >
-                            Suspend Tenant
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem onClick={() => activateMutation.mutate(tenant.id)}>
-                            Activate Tenant
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
+        {/* Tenants Table */}
+        <Card className="bg-white/80 backdrop-blur-sm border-gray-200 shadow-sm">
+          <CardHeader>
+            <CardTitle>Tenants</CardTitle>
+            <CardDescription>
+              {data?.meta?.total || 0} total pharmacy organizations
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Plan</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="w-[70px]"></TableHead>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                      Loading tenants...
+                    </TableCell>
+                  </TableRow>
+                ) : !data?.data || data.data.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8">
+                      <div className="flex flex-col items-center gap-2">
+                        <Building2 className="h-12 w-12 text-gray-400" />
+                        <p className="text-gray-500">No tenants found</p>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  data.data.map((tenant) => (
+                    <TableRow key={tenant.id}>
+                      <TableCell className="font-medium">{tenant.name}</TableCell>
+                      <TableCell>
+                        <code className="text-xs bg-gray-100 px-2 py-1 rounded">{tenant.code}</code>
+                      </TableCell>
+                      <TableCell className="capitalize">{tenant.type.toLowerCase()}</TableCell>
+                      <TableCell className="capitalize">{tenant.subscriptionPlan.toLowerCase()}</TableCell>
+                      <TableCell>{getStatusBadge(tenant.status)}</TableCell>
+                      <TableCell className="text-gray-600">
+                        {format(new Date(tenant.createdAt), 'MMM d, yyyy')}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {tenant.status === TenantStatus.ACTIVE ? (
+                              <DropdownMenuItem
+                                onClick={() => suspendMutation.mutate(tenant.id)}
+                                className="text-destructive"
+                              >
+                                Suspend Tenant
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem onClick={() => activateMutation.mutate(tenant.id)}>
+                                Activate Tenant
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       </div>
-
-      {/* Pagination Info */}
-      {data?.meta && (
-        <div className="text-sm text-muted-foreground">
-          Showing {data.data.length} of {data.meta.total} tenants
-        </div>
-      )}
     </div>
   );
 }
